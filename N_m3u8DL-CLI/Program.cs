@@ -43,9 +43,167 @@ namespace N_m3u8DL_CLI.NetCore
         {
             return true;
         }
-
-
         static void Main(string[] args)
+        {
+            ServicePointManager.ServerCertificateValidationCallback = ValidateServerCertificate;
+            ServicePointManager.DefaultConnectionLimit = 1024;
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3
+                                   | SecurityProtocolType.Tls
+                                   | (SecurityProtocolType)0x300 //Tls11  
+                                   | (SecurityProtocolType)0xC00; //Tls12 
+            CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("zh-CN");
+            Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo("zh-CN");
+            FFmpeg.FFMPEG_PATH = Path.Combine(Environment.CurrentDirectory, "ffmpeg.exe");
+            var lines = File.ReadAllLines("zho-a.m3u");
+            for (int index = 0; index < lines.Length; index++)
+            {
+                string testurl = "";
+                string name = "";
+                if (!lines[index].StartsWith("#EXTINF:-1"))
+                {
+                    continue;
+                }
+                int firstQ = lines[index].IndexOf("\"");
+                int secondQ = lines[index].IndexOf("\"", firstQ + 1);
+                name = (index+1) + "_" + lines[index].Substring(firstQ+1, secondQ - firstQ-1).Replace(' ', '_');
+                Console.WriteLine(name);
+                for (int j = index + 1; j < lines.Length; j++)
+                {
+                    if (lines[j].ToLower().StartsWith("http"))
+                    {
+                        testurl = lines[j];
+                        index = j;
+                        break;
+                    }
+                }
+
+
+                try
+                {
+                    string CURRENT_PATH = Directory.GetCurrentDirectory();
+                    string fileName = name;
+
+                    int maxThreads = 1;
+                    int minThreads = 1;
+                    int retryCount = 5;
+                    int timeOut = 10; //默认10秒
+
+                    string reqHeaders = "";
+                    string keyFile = "";
+                    string keyBase64 = "";
+                    string keyIV = "";
+                    string muxSetJson = "MUXSETS.json";
+                    string workDir = CURRENT_PATH + "\\Downloads";
+                    bool muxFastStart = false;
+                    bool delAfterDone = false;
+                    bool parseOnly = false;
+                    bool noMerge = false;
+                    //Global.UseProxyAddress = proxy;
+                    HLSLiveDownloader.REC_DUR_LIMIT = 0 + 5 * 60 + 00 * 60 * 60;
+
+
+                    if (fileName == "")
+                        fileName = name + "_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+
+                    if (testurl.Contains("twitcasting") && testurl.Contains("/fmp4/"))
+                    {
+                        DownloadManager.BinaryMerge = true;
+                    }
+
+                    string m3u8Content = string.Empty;
+                    bool isVOD = true;
+
+                    //开始解析
+
+                    LOGGER.PrintLine($"{strings.fileName}{fileName}");
+                    LOGGER.PrintLine($"{strings.savePath}{Path.GetDirectoryName(Path.Combine(workDir, fileName))}");
+
+                    Parser parser = new Parser();
+                    parser.DownName = fileName;
+                    parser.DownDir = Path.Combine(workDir, parser.DownName);
+                    parser.M3u8Url = testurl;
+                    parser.KeyBase64 = keyBase64;
+                    parser.KeyIV = keyIV;
+                    parser.KeyFile = keyFile;
+                    parser.Headers = reqHeaders;
+                    string exePath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
+                    LOGGER.LOGFILE = Path.Combine(exePath, "Logs", fileName + ".log");
+                    LOGGER.InitLog();
+                    LOGGER.WriteLine(strings.startParsing + testurl);
+                    LOGGER.PrintLine(strings.startParsing, LOGGER.Warning);
+                    if (testurl.EndsWith(".json") && File.Exists(testurl))  //可直接跳过解析
+                    {
+                        if (!Directory.Exists(Path.Combine(workDir, fileName)))//若文件夹不存在则新建文件夹   
+                            Directory.CreateDirectory(Path.Combine(workDir, fileName)); //新建文件夹  
+                        File.Copy(testurl, Path.Combine(Path.Combine(workDir, fileName), "meta.json"), true);
+                    }
+                    else
+                    {
+                        parser.Parse();  //开始解析
+                    }
+
+                    if (File.Exists(Path.Combine(Path.Combine(workDir, fileName), "meta.json")))
+                    {
+                        JObject initJson = JObject.Parse(File.ReadAllText(Path.Combine(Path.Combine(workDir, fileName), "meta.json")));
+                        isVOD = Convert.ToBoolean(initJson["m3u8Info"]["vod"].ToString());
+                        //传给Watcher总时长
+                        Watcher.TotalDuration = initJson["m3u8Info"]["totalDuration"].Value<double>();
+                        LOGGER.PrintLine($"{strings.fileDuration}{Global.FormatTime((int)Watcher.TotalDuration)}");
+                        LOGGER.PrintLine(strings.segCount + initJson["m3u8Info"]["originalCount"].Value<int>()
+                            + $", {strings.selectedCount}" + initJson["m3u8Info"]["count"].Value<int>());
+                    }
+                    else
+                    {
+                        DirectoryInfo directoryInfo = new DirectoryInfo(Path.Combine(workDir, fileName));
+                        directoryInfo.Delete(true);
+                        LOGGER.PrintLine(strings.InvalidUri, LOGGER.Error);
+                        LOGGER.CursorIndex = 5;
+                        continue;
+                    }
+
+                    //点播
+                    if (isVOD == true)
+                    {
+                        LOGGER.PrintLine("非直播内容", LOGGER.Error);
+                    }
+                    //直播
+                    if (isVOD == false)
+                    {
+                        LOGGER.WriteLine(strings.liveStreamFoundAndRecoding);
+                        LOGGER.PrintLine(strings.liveStreamFoundAndRecoding);
+                        //LOGGER.STOPLOG = true;  //停止记录日志
+                        //开辟文件流，且不关闭。（便于播放器不断读取文件）
+                        string LivePath = Path.Combine(Directory.GetParent(parser.DownDir).FullName
+                            , fileName + ".ts");
+                        FileStream outputStream = new FileStream(LivePath, FileMode.Append);
+
+                        HLSLiveDownloader live = new HLSLiveDownloader();
+                        live.DownDir = parser.DownDir;
+                        live.Headers = reqHeaders;
+                        live.LiveStream = outputStream;
+                        live.LiveFile = LivePath;
+                        live.TimerStart();  //开始录制
+                        //Console.ReadKey();
+                    }
+                    //continue;
+                    //监听测试
+                    /*httplitsen:
+                    HTTPListener.StartListening();*/
+                    //LOGGER.WriteLineError(strings.downloadFailed);
+                    //LOGGER.PrintLine(strings.downloadFailed, LOGGER.Error);
+                    //Thread.Sleep(3000);
+                    //Environment.Exit(-1);
+                    //Console.Write("按任意键继续..."); Console.ReadKey(); return;
+                }
+                catch (Exception ex)
+                {
+                    LOGGER.PrintLine(ex.Message, LOGGER.Error);
+                }
+            }
+        }
+
+
+        static void Main1(string[] args)
         {
             SetConsoleCtrlHandler(cancelHandler, true);
             ServicePointManager.ServerCertificateValidationCallback = ValidateServerCertificate;
@@ -107,7 +265,7 @@ namespace N_m3u8DL_CLI.NetCore
 
             HasFFmpeg:
                 Global.WriteInit();
-                if (!File.Exists(Path.Combine(Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName), "NO_UPDATE"))) 
+                if (!File.Exists(Path.Combine(Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName), "NO_UPDATE")))
                 {
                     Thread checkUpdate = new Thread(() =>
                     {
@@ -117,8 +275,8 @@ namespace N_m3u8DL_CLI.NetCore
                     checkUpdate.Start();
                 }
 
-                int maxThreads = Environment.ProcessorCount;
-                int minThreads = 16;
+                int maxThreads = 1;
+                int minThreads = 1;
                 int retryCount = 15;
                 int timeOut = 10; //默认10秒
                 string baseUrl = "";
@@ -147,7 +305,7 @@ namespace N_m3u8DL_CLI.NetCore
                 //分析命令行参数
                 parseArgs:
                 var arguments = CommandLineArgumentParser.Parse(args);
-                if (args.Length == 1 && args[0] == "--help") 
+                if (args.Length == 1 && args[0] == "--help")
                 {
                     Console.WriteLine(strings.helpInfo);
                     return;

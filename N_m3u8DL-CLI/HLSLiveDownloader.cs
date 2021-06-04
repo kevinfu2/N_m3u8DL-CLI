@@ -31,9 +31,11 @@ namespace N_m3u8DL_CLI
         ArrayList toDownList = new ArrayList();  //所有待下载的列表
         System.Timers.Timer timer = new System.Timers.Timer();
         Downloader sd = new Downloader();  //只有一个实例
+        private int repeatedCount = 0;
 
         public void TimerStart()
         {
+            sd.Timer = timer;
             timer.Enabled = true;
             //timer.Interval = (targetduration - 2) * 1000; //执行间隔时间,单位为毫秒
             timer.Start();
@@ -51,7 +53,7 @@ namespace N_m3u8DL_CLI
         private void UpdateList(object source, EventArgs e)
         {
             jsonFile = Path.Combine(DownDir, "meta.json");
-            if (!File.Exists(jsonFile)) 
+            if (!File.Exists(jsonFile))
             {
                 TimerStop();
                 return;
@@ -61,7 +63,15 @@ namespace N_m3u8DL_CLI
             string m3u8Url = initJson["m3u8"].Value<string>();
             targetduration = initJson["m3u8Info"]["targetDuration"].Value<double>();
             TotalDuration = initJson["m3u8Info"]["totalDuration"].Value<double>();
-            timer.Interval = (TotalDuration - targetduration) * 1000;//设置定时器运行间隔
+            if (targetduration == 0 || TotalDuration == 0)
+            {
+                TimerStop();
+                return;
+            }
+            if (TotalDuration > targetduration)
+                timer.Interval = (TotalDuration - targetduration) * 1000;//设置定时器运行间隔
+            else
+                timer.Interval = targetduration * 1000;
             JArray lastSegments = JArray.Parse(initJson["m3u8Info"]["segments"][0].ToString().Trim());  //上次的分段，用于比对新分段
             ArrayList tempList = new ArrayList();  //所有待下载的列表
             tempList.Clear();
@@ -70,7 +80,7 @@ namespace N_m3u8DL_CLI
                 tempList.Add(seg.ToString());
             }
 
-            if(isFirstJson)
+            if (isFirstJson)
             {
                 toDownList = tempList;
                 isFirstJson = false;
@@ -96,6 +106,16 @@ namespace N_m3u8DL_CLI
             }
             if (toDownList.Count > 0)
                 Record();
+            else
+            {
+                Console.WriteLine("重复片段！");
+                repeatedCount++;
+                if (repeatedCount > 5)
+                {
+                    this.TimerStop();
+                    repeatedCount = 0;
+                }
+            }
         }
 
         //public void TryDownload()
@@ -115,7 +135,7 @@ namespace N_m3u8DL_CLI
 
         private void Record()
         {
-            while (toDownList.Count > 0 && (sd.FileUrl != "" ? sd.IsDone : true)) 
+            while (toDownList.Count > 0 && (sd.FileUrl != "" ? sd.IsDone : true))
             {
                 JObject info = JObject.Parse(toDownList[0].ToString());
                 int index = info["index"].Value<int>();
@@ -126,7 +146,7 @@ namespace N_m3u8DL_CLI
                     sd.Key = info["key"].Value<string>();
                     sd.Iv = info["iv"].Value<string>();
                 }
-                sd.TimeOut = (int)timer.Interval - 1000;//超时时间不超过下次执行时间
+                sd.TimeOut = (int)timer.Interval > 1000 ? (int)timer.Interval - 1000 : 1000;//超时时间不超过下次执行时间
                 sd.SegIndex = index;
                 sd.Headers = Headers;
                 sd.SegDur = info["duration"].Value<double>();
@@ -134,6 +154,7 @@ namespace N_m3u8DL_CLI
                 sd.LiveFile = LiveFile;
                 sd.LiveStream = LiveStream;
                 sd.Down();  //开始下载
+                if (sd.Timer.Enabled == false) { return; }
                 while (sd.IsDone != true) { Thread.Sleep(1); };  //忙等待 Thread.Sleep(1) 可防止cpu 100% 防止电脑风扇狂转
                 if (toDownList.Count > 0)
                     toDownList.RemoveAt(0);  //下完删除一项

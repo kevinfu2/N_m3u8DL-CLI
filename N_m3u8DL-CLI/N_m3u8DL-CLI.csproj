@@ -9,7 +9,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>N_m3u8DL_CLI</RootNamespace>
     <AssemblyName>N_m3u8DL-CLI</AssemblyName>
-    <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <TargetFrameworkProfile />
@@ -126,10 +126,12 @@
     <EmbeddedResource Include="strings.en-US.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>strings.en-US.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
     </EmbeddedResource>
     <EmbeddedResource Include="strings.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>strings.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
     </EmbeddedResource>
     <EmbeddedResource Include="strings.zh-TW.resx">
       <Generator>ResXFileCodeGenerator</Generator>

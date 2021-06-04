@@ -101,7 +101,7 @@ namespace N_m3u8DL_CLI
         }
 
         //获取网页源码
-        public static string GetWebSource(String url, string headers = "", int TimeOut = 60000)
+        public static string GetWebSource(String url, string headers = "", int TimeOut = 10000)
         {
             string htmlCode = string.Empty;
             for (int i = 0; i < 5; i++)

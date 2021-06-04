@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -30,6 +31,7 @@ namespace N_m3u8DL_CLI
         private bool isDone = false;
         private bool firstSeg = true;
         private FileStream liveStream = null;
+        public System.Timers.Timer Timer = null;
 
         public string FileUrl { get => fileUrl; set => fileUrl = value; }
         public string SavePath { get => savePath; set => savePath = value; }
@@ -72,16 +74,27 @@ namespace N_m3u8DL_CLI
                 {
                     IsDone = false;  //设置为未完成下载
 
-                    if (Method == "NONE" || method.Contains("NOTSUPPORTED")) 
+                    if (Method == "NONE" || method.Contains("NOTSUPPORTED"))
                     {
+                        var stopwatch = new Stopwatch();
                         LOGGER.PrintLine("<" + SegIndex + " Downloading>");
                         LOGGER.WriteLine("<" + SegIndex + " Downloading>");
+                        stopwatch.Start();
                         byte[] segBuff = Global.HttpDownloadFileToBytes(fileUrl, Headers, TimeOut);
+                        stopwatch.Stop();
                         //byte[] segBuff = Global.WebClientDownloadToBytes(fileUrl, Headers);
                         Global.AppendBytesToFileStreamAndDoNotClose(LiveStream, segBuff);
+                        LOGGER.PrintLine("SegDur: " + SegDur);
+                        LOGGER.PrintLine("Length: " + segBuff.Length);
+                        LOGGER.PrintLine("LengthPerSegDur:" + Math.Round(segBuff.Length / SegDur / 1024, 2));
                         LOGGER.PrintLine("<" + SegIndex + " Complete>\r\n");
                         LOGGER.WriteLine("<" + SegIndex + " Complete>");
                         IsDone = true;
+                        if (firstSeg)
+                        {
+                            LOGGER.PrintLine("SPEED:"+ segBuff.Length/stopwatch.ElapsedMilliseconds + "\r\n");
+                            LOGGER.WriteLine("SPEED:" + segBuff.Length / stopwatch.ElapsedMilliseconds + "\r\n");
+                        }
                     }
                     else if (Method == "AES-128")
                     {
@@ -116,11 +129,14 @@ namespace N_m3u8DL_CLI
                         //LOGGER.STOPLOG = true;  //停止记录日志
                     }
                     HLSLiveDownloader.REC_DUR += SegDur;
-                    if (HLSLiveDownloader.REC_DUR_LIMIT != -1 && HLSLiveDownloader.REC_DUR >= HLSLiveDownloader.REC_DUR_LIMIT) 
+                    if (HLSLiveDownloader.REC_DUR_LIMIT != -1 && HLSLiveDownloader.REC_DUR >= HLSLiveDownloader.REC_DUR_LIMIT)
                     {
                         LOGGER.PrintLine(strings.recordLimitReached, LOGGER.Warning);
                         LOGGER.WriteLine(strings.recordLimitReached);
-                        Environment.Exit(0); //正常退出
+                        //Environment.Exit(0); //正常退出
+                        this.Timer.Stop();
+                        this.Timer.Enabled = false;
+                        return;
                     }
                     return;
                 }
@@ -176,7 +192,7 @@ namespace N_m3u8DL_CLI
                         Global.HttpDownloadFile(fileUrl, savePath, TimeOut, Headers, StartByte, ExpectByte);
                     }
                 }
-                if (File.Exists(savePath) && Global.ShouldStop == false) 
+                if (File.Exists(savePath) && Global.ShouldStop == false)
                 {
                     FileInfo fi = new FileInfo(savePath);
                     if (Method == "NONE" || method.Contains("NOTSUPPORTED"))
@@ -186,13 +202,13 @@ namespace N_m3u8DL_CLI
                         //Console.WriteLine(Path.GetFileNameWithoutExtension(savePath) + " Completed.");
                     }
                     else if (File.Exists(fi.FullName)
-                        && Method == "AES-128") 
+                        && Method == "AES-128")
                     {
                         //解密
                         try
                         {
                             byte[] decryptBuff = null;
-                            if(fileUrl.Contains(".51cto.com/")) //使用AES-128-ECB模式解密
+                            if (fileUrl.Contains(".51cto.com/")) //使用AES-128-ECB模式解密
                             {
                                 decryptBuff = Decrypter.AES128Decrypt(
                                     fi.FullName,
@@ -241,10 +257,22 @@ namespace N_m3u8DL_CLI
                     IsDone = true;
                     return;
                 }
-                else if (IsLive && count++ < Retry) 
+                else if (ex.Message.Contains("403") || ex.Message.Contains("503"))
+                {
+                    this.Timer.Stop();
+                    this.Timer.Enabled = false;
+                    return;
+                }
+                else if (IsLive && count++ < Retry)
                 {
                     Thread.Sleep(2000);//直播一般3-6秒一个片段
                     Down();
+                }
+                else
+                {
+                    this.Timer.Stop();
+                    this.Timer.Enabled = false;
+                    return;
                 }
             }
         }

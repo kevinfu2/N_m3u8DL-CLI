@@ -129,7 +129,12 @@ namespace N_m3u8DL_CLI
             }
 
             if (m3u8Content == "")
+            {
+                File.Delete(m3u8SavePath);
+                File.Delete(jsonSavePath);
                 return;
+            }
+                
 
             if (M3u8Url.Contains("tlivecloud-playback-cdn.ysp.cctv.cn") && M3u8Url.Contains("endtime="))
                 isEndlist = true;
