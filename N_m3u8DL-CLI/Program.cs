@@ -98,7 +98,8 @@ namespace N_m3u8DL_CLI.NetCore
                     bool delAfterDone = false;
                     bool parseOnly = false;
                     bool noMerge = false;
-                    //Global.UseProxyAddress = proxy;
+                    Global.NoProxy = false;
+                    Global.UseProxyAddress = "http://127.0.0.1:80/";
                     HLSLiveDownloader.REC_DUR_LIMIT = 0 + 5 * 60 + 00 * 60 * 60;
 
 
